@@ -1,24 +1,11 @@
+### `screen_recorder.py`
 """
 Lightweight Screen Recorder & Screenshot Tool
 ================================================
-A small floating on-screen icon that lets you:
-  - Record the full screen to video (no audio)
-  - Take instant screenshots
-  - Auto-save everything to a folder you pick, with timestamped filenames
+A floating on-screen toolbar for fast screen recording and screenshots.
 
-Dependencies (install once):
-    pip install mss numpy opencv-python
-
-Run:
-    python screen_recorder.py
-
-Platform notes:
-  - Windows & macOS: works out of the box.
-  - macOS: grant "Screen Recording" permission to your Terminal/Python app
-    in System Settings > Privacy & Security > Screen Recording, or you'll
-    get black frames.
-  - Linux: screen capture works on X11. Plain Wayland sessions block this
-    kind of capture for security reasons - run under X11/XWayland instead.
+Dependencies:
+    pip install mss numpy opencv-python pyinstaller
 """
 
 import os
@@ -36,20 +23,19 @@ try:
     import cv2
 except ImportError as e:
     print("Missing dependency:", e)
-    print("Install with:  pip install mss numpy opencv-python")
     sys.exit(1)
 
-# ----------------------------------------------------------------------
-# Settings you can tweak
-# ----------------------------------------------------------------------
-FPS = 12                # lower = smaller files & less CPU, higher = smoother video
-SCALE = 1.0              # 1.0 = full resolution, 0.75 = 75% size (smaller files)
+# ---------------------------------------------------------------
+# Configuration Constants
+# ------------------------------------------------------------
+FPS = 12
+SCALE = 1.0
 CONFIG_FILE = os.path.join(os.path.expanduser("~"), ".screenrec_config.txt")
 DEFAULT_FOLDER = os.path.join(os.path.expanduser("~"), "Videos", "ScreenCapture")
 
 
-# ----------------------------------------------------------------------
-# Remembers the last folder you chose, between runs
+# ----------------------------------------------------------------
+# Helper Functions
 # ----------------------------------------------------------------------
 def load_save_folder():
     if os.path.exists(CONFIG_FILE):
@@ -72,9 +58,9 @@ def save_folder_config(path):
         pass
 
 
-# ----------------------------------------------------------------------
-# Recording engine (runs capture loop on a background thread)
-# ----------------------------------------------------------------------
+# -------------------------------------------------------------------
+# Recording & Capture Engine
+# -----------------------------------------------------------------
 class ScreenRecorder:
     def __init__(self, save_folder, fps=FPS, scale=SCALE):
         self.save_folder = save_folder
@@ -89,7 +75,6 @@ class ScreenRecorder:
         self._stop_flag = threading.Event()
 
     def _build_writer(self, base_path, width, height):
-        """Try mp4 first; fall back to avi if this OpenCV build can't write mp4."""
         mp4_path = base_path + ".mp4"
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
         writer = cv2.VideoWriter(mp4_path, fourcc, self.fps, (width, height))
@@ -106,11 +91,11 @@ class ScreenRecorder:
             return None
         os.makedirs(self.save_folder, exist_ok=True)
         with mss.mss() as sct:
-            monitor = sct.monitors[0]  # full virtual screen (all monitors combined)
+            monitor = sct.monitors[0]
 
         width = int(monitor["width"] * self.scale)
         height = int(monitor["height"] * self.scale)
-        width -= width % 2    # even dimensions avoid codec issues
+        width -= width % 2
         height -= height % 2
 
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -166,12 +151,10 @@ def take_screenshot(save_folder):
     return filename
 
 
-# ----------------------------------------------------------------------
-# Floating on-screen widget (small draggable icon, click for menu)
+# -----------------------------------------------------------------
+# Floating UI Widget
 # ----------------------------------------------------------------------
 class FloatingWidget:
-    SIZE = 42
-
     def __init__(self):
         self.save_folder = load_save_folder()
         self.recorder = ScreenRecorder(self.save_folder)
@@ -180,78 +163,68 @@ class FloatingWidget:
 
         self.root = tk.Tk()
         self.root.title("Screen Recorder")
-        self.root.overrideredirect(True)          # no title bar - just the icon
-        self.root.attributes("-topmost", True)     # always on top
-        try:
-            self.root.attributes("-alpha", 0.94)    # slight transparency
-        except tk.TclError:
-            pass
-        self.root.configure(bg="#1e1e1e")
+        self.root.overrideredirect(True)
+        self.root.attributes("-topmost", True)
+        self.root.configure(bg="#1a1a1a")
 
         screen_w = self.root.winfo_screenwidth()
-        self.root.geometry(f"{self.SIZE}x{self.SIZE}+{screen_w - 90}+40")
+        self.root.geometry(f"120x40+{screen_w - 150}+40")
 
-        self.canvas = tk.Canvas(self.root, width=self.SIZE, height=self.SIZE,
-                                 bg="#1e1e1e", highlightthickness=0)
-        self.canvas.pack(fill="both", expand=True)
-        self.draw_icon()
+        self.btn_rec = tk.Label(self.root, text="⏺", bg="#1a1a1a", fg="#ff4d4d", font=("Segoe UI", 16))
+        self.btn_rec.place(x=0, y=0, width=40, height=40)
 
-        self.canvas.bind("<ButtonPress-1>", self._press)
-        self.canvas.bind("<B1-Motion>", self._drag)
-        self.canvas.bind("<ButtonRelease-1>", self._release)
+        self.btn_shot = tk.Label(self.root, text="📷", bg="#1a1a1a", fg="white", font=("Segoe UI", 13))
+        self.btn_shot.place(x=40, y=0, width=40, height=40)
+
+        self.btn_more = tk.Label(self.root, text="⋮", bg="#1a1a1a", fg="white", font=("Segoe UI", 16))
+        self.btn_more.place(x=80, y=0, width=40, height=40)
+
         self._drag_info = {"x": 0, "y": 0, "moved": False}
+        for w in (self.root, self.btn_rec, self.btn_shot, self.btn_more):
+            w.bind("<ButtonPress-1>", self._press)
+            w.bind("<B1-Motion>", self._drag)
 
-        self.root.protocol("WM_DELETE_WINDOW", self.quit_app)
+        self.btn_rec.bind("<ButtonRelease-1>", lambda e: self._click_action(self.toggle_recording))
+        self.btn_shot.bind("<ButtonRelease-1>", lambda e: self._click_action(self.do_screenshot))
+        self.btn_more.bind("<ButtonRelease-1>", lambda e: self._click_action(self.toggle_menu))
 
-    # -- drawing ---------------------------------------------------------
-    def draw_icon(self):
-        self.canvas.delete("all")
-        color = "#e03131" if self.recorder.recording else "#3a3a3a"
-        self.canvas.create_oval(3, 3, self.SIZE - 3, self.SIZE - 3,
-                                 fill=color, outline="#999", width=1, tags="dot")
-        symbol = "\u25a0" if self.recorder.recording else "\u25cf"  # ■ or ●
-        self.canvas.create_text(self.SIZE / 2, self.SIZE / 2, text=symbol,
-                                 fill="white", font=("Segoe UI", 13))
+    def _press(self, event):
+        self._drag_info = {"x": event.x_root, "y": event.y_root, "moved": False}
+        self._start_x = self.root.winfo_x()
+        self._start_y = self.root.winfo_y()
+
+    def _drag(self, event):
+        dx = event.x_root - self._drag_info["x"]
+        dy = event.y_root - self._drag_info["y"]
+        if abs(dx) > 3 or abs(dy) > 3:
+            self._drag_info["moved"] = True
+            self.root.geometry(f"+{self._start_x + dx}+{self._start_y + dy}")
+
+    def _click_action(self, action):
+        if not self._drag_info["moved"]:
+            action()
 
     def _blink(self):
         if self.recorder.recording:
             self._blink_on = not self._blink_on
-            color = "#ff5252" if self._blink_on else "#a01818"
-            self.canvas.itemconfig("dot", fill=color)
+            color = "#ff4d4d" if self._blink_on else "#802626"
+            self.btn_rec.configure(fg=color, text="⏹")
             self.root.after(600, self._blink)
+        else:
+            self.btn_rec.configure(fg="#ff4d4d", text="⏺")
 
     def show_toast(self, text, duration=1800):
-        """Small non-blocking notification near the icon, auto-closes."""
         x, y = self.root.winfo_x(), self.root.winfo_y()
         toast = tk.Toplevel(self.root)
         toast.overrideredirect(True)
         toast.attributes("-topmost", True)
-        toast.configure(bg="#1e1e1e")
-        tk.Label(toast, text=text, bg="#1e1e1e", fg="white", font=("Segoe UI", 9),
-                  padx=10, pady=6, justify="left").pack()
+        toast.configure(bg="#1a1a1a")
+        tk.Label(toast, text=text, bg="#1a1a1a", fg="white", font=("Segoe UI", 9), padx=10, pady=6).pack()
         toast.update_idletasks()
         w = toast.winfo_width()
-        toast.geometry(f"+{max(x - w + self.SIZE, 0)}+{y + self.SIZE + 6}")
+        toast.geometry(f"+{x + 60 - (w // 2)}+{y + 45}")
         toast.after(duration, toast.destroy)
 
-    # -- dragging vs. clicking --------------------------------------------
-    def _press(self, event):
-        self._drag_info = {"x": event.x, "y": event.y, "moved": False}
-
-    def _drag(self, event):
-        dx = event.x - self._drag_info["x"]
-        dy = event.y - self._drag_info["y"]
-        if abs(dx) > 3 or abs(dy) > 3:
-            self._drag_info["moved"] = True
-        x = self.root.winfo_x() + dx
-        y = self.root.winfo_y() + dy
-        self.root.geometry(f"+{x}+{y}")
-
-    def _release(self, event):
-        if not self._drag_info["moved"]:
-            self.toggle_menu()
-
-    # -- popup menu --------------------------------------------------------
     def toggle_menu(self):
         if self.menu and self.menu.winfo_exists():
             self.close_menu()
@@ -260,18 +233,15 @@ class FloatingWidget:
         self.menu = tk.Toplevel(self.root)
         self.menu.overrideredirect(True)
         self.menu.attributes("-topmost", True)
-        self.menu.configure(bg="#1e1e1e")
-        self.menu.geometry(f"190x175+{x - 150}+{y}")
+        self.menu.configure(bg="#1a1a1a")
+        self.menu.geometry(f"160x85+{x - 40}+{y + 45}")
 
         def btn(text, cmd):
-            b = tk.Button(self.menu, text=text, command=cmd, bg="#2b2b2b", fg="white",
-                          activebackground="#3a3a3a", activeforeground="white",
-                          relief="flat", anchor="w", padx=10, font=("Segoe UI", 10), bd=0)
+            b = tk.Button(self.menu, text=text, command=cmd, bg="#262626", fg="white",
+                          activebackground="#333", activeforeground="white",
+                          relief="flat", anchor="w", padx=10, font=("Segoe UI", 9), bd=0)
             b.pack(fill="x", pady=1, padx=4)
 
-        btn("Stop Recording" if self.recorder.recording else "Start Recording",
-            self.toggle_recording)
-        btn("Take Screenshot", self.do_screenshot)
         btn("Choose Save Folder", self.choose_folder)
         btn("Open Save Folder", self.open_folder)
         btn("Quit", self.quit_app)
@@ -281,33 +251,28 @@ class FloatingWidget:
             self.menu.destroy()
         self.menu = None
 
-    # -- actions -----------------------------------------------------------
     def toggle_recording(self):
         self.close_menu()
         if self.recorder.recording:
             self.recorder.stop()
-            self.draw_icon()
-            self.show_toast(f"Saved:\n{os.path.basename(self.recorder.filename)}")
+            self._blink()
+            self.show_toast("Saved Video")
         else:
             self.recorder.save_folder = self.save_folder
-            result = self.recorder.start()
-            if result is None:
-                messagebox.showerror("Recording failed",
-                                      "Could not start the video writer.\n"
-                                      "Check that the save folder is writable.")
+            if self.recorder.start() is None:
+                messagebox.showerror("Error", "Could not start recording.")
                 return
-            self.draw_icon()
             self._blink()
 
     def do_screenshot(self):
         self.close_menu()
-        self.root.withdraw()   # hide the icon so it doesn't appear in the shot
+        self.root.withdraw()
         self.root.update()
-        time.sleep(0.15)       # give the window manager time to actually hide it
-        filename = take_screenshot(self.save_folder)
+        time.sleep(0.15)
+        take_screenshot(self.save_folder)
         self.root.deiconify()
         self.root.attributes("-topmost", True)
-        self.show_toast(f"Saved:\n{os.path.basename(filename)}")
+        self.show_toast("Saved Screenshot")
 
     def choose_folder(self):
         self.close_menu()
