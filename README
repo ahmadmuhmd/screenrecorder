@@ -1,42 +1,32 @@
-Lightweight Screen Recorder
+# Lightweight Screen Recorder & Screenshot Tool
 
-A small floating icon that sits on top of your screen. Click it to start/stop video recording, take a screenshot, or pick your save folder. Files save automatically with timestamped names — no dialogs to click through.
+A minimalist, floating desktop toolbar for instant screen recording and screenshots. Built with Python, `mss`, OpenCV, and Tkinter.
 
-No audio, no bloat: just mss (screen capture) + opencv-python (video encode) + Tkinter (the icon UI, built into Python).
+---
 
-SETUP: 
-======================================================================
-bash
+# Why Choose This Over OBS or Other Recorders?
+
+| Feature            | Lightweight Screen Recorder                                                          | OBS Studio / Standard Recorders |
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------
+| **Resource Usage** | Extremely low CPU/RAM (~12 FPS default, no GPU canvas rendering)                      | Heavy background CPU/GPU usage |
+| **User Interface** | Minimal 3-button floating overlay bar (⏺ 📷 ⋮)                                       | Complex multi-pane UI with scenes/sources |
+| **Workflow**       | Instant 1-click recording & auto-saves to disk with zero prompts                      | Requires configuring sources, scenes, and output paths |
+| **Portability**    | Standalone `.exe` / `.app` that can be pinned to taskbar or desktop                   | Full installer suite with system drivers |
+| **Screenshots**    | Native 1-click full-screen capture auto-hiding the UI                                 | Requires hotkey setup or third-party tool |
+
+============================================================================================================================================================
+
+# Features
+
+- Minimalist Overlay: Compact, dark-mode 3-button toolbar (Record, Screenshot, Settings).
+- Draggable UI: Position the toolbar anywhere on your screen.
+- Zero-Prompt Auto-Save: Files automatically save to `~/Videos/ScreenCapture` with timestamped filenames.
+- Smart Screenshotting: UI automatically hides for a fraction of a second when taking a screenshot so it doesn't appear in the capture.
+- Persistent Settings: Remembers your chosen save folder across app restarts.
+
+---
+
+# Installation & Setup
+
+```bash
 pip install -r requirements.txt
-========================================================================
-Run
-======================================================================
-bash
-python screen_recorder.py
-======================================================================
-
-A small dark circle icon will appear near the top-right of your screen.
-
-Click it → opens a small menu (Start/Stop Recording, Screenshot, Choose Save Folder, Open Save Folder, Quit)
-Drag it → moves it anywhere on screen
-First run saves to ~/Videos/ScreenCapture by default; pick a different folder from the menu and it is remembered for next time.
-
-Recordings are named Recording_2026-08-09_14-30-05.mp4, screenshots Screenshot_2026-08-09_14-30-05.png.
-
-Tuning
-
-At the top of screen_recorder.py:
-
-python
-FPS = 12      # lower = smaller files, less CPU. 12-15 is a good default.
-SCALE = 1.0   # e.g. 0.75 to record at 75% resolution
-
-PLATFORM NOTES:
-
-Windows / macOS — works out of the box.
-macOS — first run, grant "Screen Recording" permission to your Terminal/Python app in System Settings → Privacy & Security → Screen Recording, or captures come out black.
-Linux — capture works on X11. Plain Wayland sessions block this kind of screen capture for security reasons — run under X11/XWayland.
-
-KNOWN LIMITATION:
-
-Because the icon is genuinely on your screen, it will appear in the corner of your video recordings (screenshots hide it automatically first). Drag it somewhere less distracting before recording, or just crop it out later if it bothers you.
